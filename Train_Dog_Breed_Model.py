@@ -1,25 +1,28 @@
 
 # coding: utf-8
 
-# In[1]:
+# In[23]:
 
 
+from keras.applications.inception_v3 import InceptionV3, preprocess_input
 from keras.layers.pooling import GlobalAveragePooling2D
 from keras.layers.merge import Concatenate
-from keras.layers import Input, Dense
+from keras.layers import Input, Dense, Flatten
 from keras.layers.core import Dropout, Activation
 from keras.callbacks import ModelCheckpoint
 from keras.layers.normalization import BatchNormalization
 from keras.models import Model
-from keras.preprocessing import image                  
-from tqdm import tqdm   
+from keras.preprocessing import image  
 from keras.utils import np_utils
+from keras.optimizers import Adam
+from sklearn.metrics import accuracy_score
+from sklearn.datasets import load_files
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+from tqdm import tqdm   
 import numpy as np
 from glob import glob
 import os.path
 import pandas as pd
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder
-from keras.applications.inception_v3 import InceptionV3, preprocess_input
 import pickle
 
 
@@ -34,28 +37,37 @@ import pickle
 
 
 try:
-    assert os.path.isfile('labels.csv') and os.path.isdir('train')
+    assert os.path.isdir('dogImages/train') and os.path.isdir('dogImages/test') and os.path.isdir('dogImages/valid')
 except:
-    print("Go to https://www.kaggle.com/c/dog-breed-identification/data download and unpack train.zip and labels.csv.zip")
+    print("Download the images from https://s3-us-west-1.amazonaws.com/udacity-aind/dog-project/dogImages.zip and unpack.")
     raise
 
 
 # In[4]:
 
 
-file_paths = glob("train/*")
-print('Dog files:', len(file_paths))
-
-labels = pd.read_csv('labels.csv')
-dog_labels_mapping = dict(zip(labels.id.values, labels.breed.values))
-dog_label_encoder = LabelEncoder().fit(labels.breed.unique())
-dog_labels = [dog_labels_mapping[path.replace('train/', '').replace('.jpg','')] for path in file_paths]
-encoded_dog_labels = dog_label_encoder.transform(dog_labels)
-dog_label_onehot_encoder = OneHotEncoder(sparse=False).fit(encoded_dog_labels.reshape(-1, 1))
-onehot_encoded_dog_labels = dog_label_onehot_encoder.transform(encoded_dog_labels.reshape(-1, 1))
+def load_dataset(path):
+    data = load_files(path)
+    dog_files = np.array(data['filenames'])
+    dog_targets = np_utils.to_categorical(np.array(data['target']), 133)
+    return dog_files, dog_targets
 
 
 # In[5]:
+
+
+train_files, train_targets = load_dataset('dogImages/train')
+valid_files, valid_targets = load_dataset('dogImages/valid')
+test_files, test_targets = load_dataset('dogImages/test')
+
+
+# In[6]:
+
+
+dog_names = [item[20:-1] for item in sorted(glob("dogImages/train/*/"))]
+
+
+# In[7]:
 
 
 def path_to_tensor(img_path):
@@ -71,54 +83,75 @@ def paths_to_tensor(img_paths):
     return np.vstack(list_of_tensors)
 
 
-# In[6]:
+# In[8]:
 
 
-tensors = paths_to_tensor(file_paths).astype('float32')
-preprocessed_input = preprocess_input(tensors)
-preprocessed_tensors = InceptionV3(weights='imagenet', include_top=False).predict(preprocessed_input, batch_size=32)
-print("InceptionV3 shape", preprocessed_tensors.shape[1:])
+from PIL import ImageFile                            
+ImageFile.LOAD_TRUNCATED_IMAGES = True                 
+
+# pre-process the data for Keras
+train_tensors = paths_to_tensor(train_files).astype('float32')
+valid_tensors = paths_to_tensor(valid_files).astype('float32')
+test_tensors = paths_to_tensor(test_files).astype('float32')
 
 
 # In[9]:
 
 
-def input_branch(input_shape=None):
-    
-    size = int(input_shape[2] / 4)
-    
-    branch_input = Input(shape=input_shape)
-    branch = GlobalAveragePooling2D()(branch_input)
-    branch = Dense(size, use_bias=False, kernel_initializer='uniform')(branch)
-    branch = BatchNormalization()(branch)
-    branch = Activation("relu")(branch)
-    return branch, branch_input
+inceptionV3 = InceptionV3(weights='imagenet', include_top=False)
+# Inception Model
+train_preprocessed_input = preprocess_input(train_tensors)
+train_preprocessed_tensors = inceptionV3.predict(train_preprocessed_input, batch_size=32)
+print("InceptionV3 TrainSet shape", train_preprocessed_tensors.shape[1:])
+test_preprocessed_input = preprocess_input(test_tensors)
+test_preprocessed_tensors = inceptionV3.predict(test_preprocessed_input, batch_size=32)
+print("InceptionV3 TestSet shape", test_preprocessed_tensors.shape[1:])
+valid_preprocessed_input = preprocess_input(valid_tensors)
+valid_preprocessed_tensors = inceptionV3.predict(valid_preprocessed_input, batch_size=32)
+print("InceptionV3 ValidSet shape", valid_preprocessed_tensors.shape[1:])
 
-inception_v3_branch, inception_v3_input = input_branch(input_shape=(8, 8, 2048))
-net = Dropout(0.3)(inception_v3_branch)
+
+# In[21]:
+
+
+net_input = Input(shape=(8, 8, 2048))
+net = GlobalAveragePooling2D()(net_input)
 net = Dense(512, use_bias=False, kernel_initializer='uniform')(net)
 net = BatchNormalization()(net)
 net = Activation("relu")(net)
-net = Dropout(0.3)(net)
-net = Dense(120, kernel_initializer='uniform', activation="softmax")(net)
+net = Dropout(0.5)(net)
+net = Dense(256, use_bias=False, kernel_initializer='uniform')(net)
+net = BatchNormalization()(net)
+net = Activation("relu")(net)
+net = Dropout(0.5)(net)
+net = Dense(133, kernel_initializer='uniform', activation="softmax")(net)
 
-dog_breed_model = Model(inputs=[inception_v3_input], outputs=[net])
+dog_breed_model = Model(inputs=[net_input], outputs=[net])
 dog_breed_model.summary()
 
 
-# In[10]:
+# In[22]:
 
 
-dog_breed_model.compile(loss='categorical_crossentropy', optimizer="rmsprop", metrics=['accuracy'])
-dog_breed_model.fit([preprocessed_tensors], onehot_encoded_dog_labels,
-          epochs=10, batch_size=4, verbose=1)
-dog_breed_model.save_weights('dogbreed_model.hdf5')
+dog_breed_model.compile(loss='categorical_crossentropy', optimizer=Adam(lr=1e-04), metrics=['accuracy'])
+checkpointer = ModelCheckpoint(filepath='dogbreed_model.hdf5', verbose=1, save_best_only=True)
+dog_breed_model.fit([train_preprocessed_tensors], train_targets, 
+          validation_data=([valid_preprocessed_tensors], valid_targets),
+          epochs=50, batch_size=4, callbacks=[checkpointer], verbose=1)
 
 
-# In[11]:
+# In[26]:
 
 
-# Save the label encoder
-with open('dog_label_encoder.pickle', 'wb') as handle:
-    pickle.dump(dog_label_encoder, handle, protocol=pickle.HIGHEST_PROTOCOL)
+dog_breed_model.load_weights('dogbreed_model.hdf5') # in case you haven't train it 
+predictions = dog_breed_model.predict([test_preprocessed_tensors])
+breed_predictions = [np.argmax(prediction) for prediction in predictions]
+breed_true_labels = [np.argmax(true_label) for true_label in test_targets]
+print('Test accuracy: %.4f%%' % (accuracy_score(breed_true_labels, breed_predictions) * 100))
+
+
+# In[28]:
+
+
+pickle.dump(dog_names, open('dogbreed_labels.pickle', 'wb'))
 

@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[1]:
+# In[12]:
 
 
 from keras.layers.pooling import GlobalAveragePooling2D
@@ -12,6 +12,7 @@ from keras.callbacks import ModelCheckpoint
 from keras.preprocessing.image import img_to_array
 from keras.layers.normalization import BatchNormalization
 from keras.models import Model
+from keras.applications import inception_v3
 import numpy as np
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 import pickle
@@ -24,50 +25,47 @@ from io import BytesIO
 import json
 
 
-# In[2]:
+# In[6]:
 
 
 try:
-    assert os.path.isfile('dogbreed_model.hdf5') and            os.path.isfile('dog_label_encoder.pickle')
+    assert os.path.isfile('dogbreed_model.hdf5') and            os.path.isfile('dogbreed_labels.pickle')
 except:
     print("Run the Train_Dog_Breed_Model Script first to train the Dog Breed Classification Model")
     raise
 
 
-# In[3]:
+# In[15]:
 
 
-inception_v3_model = InceptionV3(weights='imagenet', include_top=False)
+inception_model = InceptionV3(weights='imagenet', include_top=False)
 
-def input_branch(input_shape=None):
-    
-    size = int(input_shape[2] / 4)
-    
-    branch_input = Input(shape=input_shape)
-    branch = GlobalAveragePooling2D()(branch_input)
-    branch = Dense(size, use_bias=False, kernel_initializer='uniform')(branch)
-    branch = BatchNormalization()(branch)
-    branch = Activation("relu")(branch)
-    return branch, branch_input
 
-inception_v3_branch, inception_v3_input = input_branch(input_shape=(8, 8, 2048))
-net = Dropout(0.3)(inception_v3_branch)
+# In[7]:
+
+
+net_input = Input(shape=(8, 8, 2048))
+net = GlobalAveragePooling2D()(net_input)
 net = Dense(512, use_bias=False, kernel_initializer='uniform')(net)
 net = BatchNormalization()(net)
 net = Activation("relu")(net)
-net = Dropout(0.3)(net)
-net = Dense(120, kernel_initializer='uniform', activation="softmax")(net)
+net = Dropout(0.5)(net)
+net = Dense(256, use_bias=False, kernel_initializer='uniform')(net)
+net = BatchNormalization()(net)
+net = Activation("relu")(net)
+net = Dropout(0.5)(net)
+net = Dense(133, kernel_initializer='uniform', activation="softmax")(net)
 
-dog_breed_model = Model(inputs=[inception_v3_input], outputs=[net])
-dog_breed_model.load_weights('dogbreed_model.hdf5')
+dog_breed_model = Model(inputs=[net_input], outputs=[net])
 dog_breed_model.summary()
+dog_breed_model.load_weights('dogbreed_model.hdf5')
 
 
-# In[17]:
+# In[ ]:
 
 
-with open("dog_label_encoder.pickle", "rb") as f:
-    dog_label_encoder = pickle.load(f)
+with open("dogbreed_labels.pickle", "rb") as f:
+    dogbreed_labels = np.array(pickle.load(f))
 
 def format_percentage(raw_probability):
     return "{0:.2f}%".format(raw_probability * 100)
@@ -78,7 +76,7 @@ class LabelRecord(object):
         probabilities = np.array(predictions[0])
         top_five_breed_index = np.argsort(probabilities)[::-1][:5]
         
-        dog_breed_names = dog_label_encoder.inverse_transform(top_five_breed_index)
+        dog_breed_names = dogbreed_labels[top_five_breed_index]
         
         self.label1 = dog_breed_names[0].upper()
         self.probability1 = format_percentage(probabilities[top_five_breed_index[0]])
@@ -111,8 +109,8 @@ for message in consumer:
     processed_image = preprocess_input(image_batch.copy())
     
     # make predictions
-    inception_v3_predictions = inception_v3_model.predict(processed_image)
-    predictions = dog_breed_model.predict(inception_v3_predictions, batch_size=1)
+    inception_v3_predictions = inception_model.predict(processed_image)
+    predictions = dog_breed_model.predict(inception_v3_predictions)
     
     # transform predictions to json
     label = LabelRecord(predictions)
