@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[12]:
+# In[1]:
 
 
 from keras.layers.pooling import GlobalAveragePooling2D
@@ -25,7 +25,13 @@ from io import BytesIO
 import json
 
 
-# In[6]:
+# In[ ]:
+
+
+KAFKA_BROKER_ADDRESS='localhost:9092'
+
+
+# In[2]:
 
 
 try:
@@ -35,13 +41,13 @@ except:
     raise
 
 
-# In[15]:
+# In[3]:
 
 
 inception_model = InceptionV3(weights='imagenet', include_top=False)
 
 
-# In[7]:
+# In[4]:
 
 
 net_input = Input(shape=(8, 8, 2048))
@@ -97,8 +103,8 @@ class LabelRecord(object):
 
 
 # Kafka Service
-consumer = KafkaConsumer('classificationimage', group_id='group1')
-producer = KafkaProducer(bootstrap_servers='localhost:9092')
+consumer = KafkaConsumer('classificationimage', group_id='group1',bootstrap_servers=KAFKA_BROKER_ADDRESS)
+producer = KafkaProducer(bootstrap_servers=KAFKA_BROKER_ADDRESS)
 for message in consumer:
     
     # transform image

@@ -7,13 +7,19 @@
 import keras
 import numpy as np
 from keras.applications import inception_v3
-from keras.preprocessing.image import load_img, img_to_array
+from keras.preprocessing.image import img_to_array
 from keras.applications.imagenet_utils import decode_predictions
 import base64
 from PIL import Image
 from kafka import KafkaConsumer, KafkaProducer
 from io import BytesIO
 import json
+
+
+# In[ ]:
+
+
+KAFKA_BROKER_ADDRESS='localhost:9092'
 
 
 # In[2]:
@@ -51,8 +57,8 @@ class LabelRecord(object):
 
 
 # Kafka Service
-consumer = KafkaConsumer('classificationimage', group_id='group1')
-producer = KafkaProducer(bootstrap_servers='localhost:9092')
+consumer = KafkaConsumer('classificationimage', group_id='group1',bootstrap_servers=KAFKA_BROKER_ADDRESS)
+producer = KafkaProducer(bootstrap_servers=KAFKA_BROKER_ADDRESS)
 for message in consumer:
     
     # transform image
