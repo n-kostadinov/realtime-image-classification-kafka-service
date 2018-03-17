@@ -10,7 +10,7 @@ running docker for the first time on your machine, make sure you have configured
 in the Kaggle example above it is /tmp/working 
 
 4) NOTE: When following the kaggle tutorial and exending your .bashrc, you might prefer to add this line instead:
-alias kpython='sudo docker run -v $PWD:/tmp/working -w=/tmp/working --rm -it kaggle/python python "$@"'
+alias kpython='sudo docker run -v $PWD:/tmp/working -w=/tmp/working --rm -it "kaggleandkafka/python:dockerfile" python "$@"'
 after that you can run the kafka service like this:
 kpython Real_Time_Classification_Kafka_Service.py
 
